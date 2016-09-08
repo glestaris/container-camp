@@ -40,7 +40,7 @@ def mount_cvmfs(hosts, server_fqdn, cert_path):
 
 
 @ice.ParallelRunner
-def runc_start(hosts, image, id, *args):
+def runc_run(hosts, image, id, *args):
     """Start a container using a CernVM-FS backed container image.
 
     Args:
@@ -50,7 +50,7 @@ def runc_start(hosts, image, id, *args):
     """
     q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(runc_start_task, hosts, q, image, id, args)
+        res = fab.execute(runc_run_task, hosts, q, image, id, args)
     _print_outcomes(res)
     if _check_outcomes(res):
         durations = _get_durations(hosts, q)
@@ -174,9 +174,8 @@ def make_runc_config_task(hosts, id, args):
     return fab.sudo('{:s} > {:s}'.format(cmd, config_path), warn_only=True)
 
 
-def runc_start_task(hosts, q, image, id, args):
+def runc_run_task(hosts, q, image, id, args):
     tm = experiment_timing.ExperimentTiming()
-    tm.start(time.time())
 
     ret = make_runc_bundle_task(hosts, image, id)
     if ret.failed:
@@ -188,10 +187,10 @@ def runc_start_task(hosts, q, image, id, args):
 
     bundle_path = path.join(BUNDLES_BASE_PATH, id)
     with fab.cd(bundle_path):
-        fab.sudo('runc create {:s}'.format(id))
-        ret = fab.sudo('runc start {:s}'.format(id), warn_only=True)
+        tm.start(time.time())
+        ret = fab.sudo('runc run {:s}'.format(id), warn_only=True)
+        tm.end(time.time())
 
-    tm.end(time.time())
     q.put([fab.env.host_string, tm.to_json()])
 
     return ret
