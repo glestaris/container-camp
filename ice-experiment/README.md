@@ -23,7 +23,7 @@ Running `make` inside `test-image/` should then be able to build and push an
 AMI. Currently AMIs end up in the eu-west-1 AWS availability zone but you can
 easily change that by modifying `test-image/runc-cvmfs.json`.
 
-The latest AMI in eu-west-1 is: **ami-dc8df1af**.
+The latest AMI in eu-west-1 is: **ami-0af58979**.
 
 ## Experiment
 

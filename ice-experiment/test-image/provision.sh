@@ -46,7 +46,7 @@ install_runc() {
   cp runc /usr/local/bin/runc
 }
 
-install_oci_image_tool() {
+install_ocitools() {
   # Setupt the environment
   export GOPATH=/root/go
   export PATH=$GOPATH/bin:/usr/local/go/bin:$PATH
@@ -54,14 +54,14 @@ install_oci_image_tool() {
   # Clone runC
   mkdir -p $GOPATH/src/github.com/opencontainers/
   cd $GOPATH/src/github.com/opencontainers
-  git clone https://github.com/opencontainers/image-spec
+  git clone https://github.com/opencontainers/ocitools
 
   # Build
-  cd image-spec
-  make oci-image-tool
+  cd ocitools
+  make
 
   # Install
-  cp oci-image-tool /usr/local/bin/oci-image-tool
+  cp ocitools /usr/local/bin/ocitools
 }
 
 install_cvmfs() {
@@ -83,5 +83,5 @@ install_apt_packages
 install_docker
 install_go
 install_runc
-install_oci_image_tool
+install_ocitools
 install_cvmfs

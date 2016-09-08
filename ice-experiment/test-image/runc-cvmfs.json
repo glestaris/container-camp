@@ -6,13 +6,13 @@
       "type": "amazon-ebs",
       "access_key": "{{user `aws_access_key`}}",
       "secret_key": "{{user `aws_secret_key`}}",
-      "ami_name": "CC Ubuntu 16.04 v0.0.2",
+      "ami_name": "CC Ubuntu 16.04 v0.0.3",
       "region": "eu-west-1",
       "instance_type": "m4.large",
       "source_ami": "ami-be3559cd",
       "ssh_username": "ubuntu",
       "tags": {
-        "version_desc": "Install oci-image-tool"
+        "version_desc": "Install ocitools"
       }
     }
   ],
