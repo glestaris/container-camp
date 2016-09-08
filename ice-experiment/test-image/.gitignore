@@ -2,4 +2,4 @@
 packer_cache/
 
 # Secrets
-secrets.json
+/secrets.json
