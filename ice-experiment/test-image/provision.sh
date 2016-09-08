@@ -10,23 +10,25 @@ update() {
 
 install_apt_packages() {
   apt-get install -y vim \
-	git \
-	silversearcher-ag \
-	jq \
-	cgroup-lite \
-	htop \
-	gcc \
-	python
+    git \
+    silversearcher-ag \
+    jq \
+    cgroup-lite \
+    htop \
+    gcc \
+    make \
+    python
 }
 
 install_docker() {
   curl https://get.docker.com | sh
 }
 
-install_runc() {
-  # Download and install Go
+install_go() {
   wget -qO- https://storage.googleapis.com/golang/go1.7.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+}
 
+install_runc() {
   # Setupt the environment
   export GOPATH=/root/go
   export PATH=$GOPATH/bin:/usr/local/go/bin:$PATH
@@ -44,6 +46,24 @@ install_runc() {
   cp runc /usr/local/bin/runc
 }
 
+install_oci_image_tool() {
+  # Setupt the environment
+  export GOPATH=/root/go
+  export PATH=$GOPATH/bin:/usr/local/go/bin:$PATH
+
+  # Clone runC
+  mkdir -p $GOPATH/src/github.com/opencontainers/
+  cd $GOPATH/src/github.com/opencontainers
+  git clone https://github.com/opencontainers/image-spec
+
+  # Build
+  cd image-spec
+  make oci-image-tool
+
+  # Install
+  cp oci-image-tool /usr/local/bin/oci-image-tool
+}
+
 install_cvmfs() {
   # Add custom apt source
   wget https://ecsft.cern.ch/dist/cvmfs/cvmfs-release/cvmfs-release-latest_all.deb
@@ -53,7 +73,7 @@ install_cvmfs() {
   # Install
   apt-get update
   apt-get install -y cvmfs \
-	linux-image-extra-$(uname -r)
+    linux-image-extra-$(uname -r)
 }
 
 ###############################################################################
@@ -61,5 +81,7 @@ install_cvmfs() {
 update
 install_apt_packages
 install_docker
+install_go
 install_runc
+install_oci_image_tool
 install_cvmfs
