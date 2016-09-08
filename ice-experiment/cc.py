@@ -1,7 +1,11 @@
+import time
+import multiprocessing
 from os import path
 import fabric.api as fab
 import fabric.contrib.files as fab_files
 import ice
+from ice import ascii_table
+from ice import experiment_timing
 
 
 BUNDLES_BASE_PATH = '/var/lib/containers'
@@ -44,23 +48,13 @@ def runc_start(hosts, image, id, *args):
         id: The runC container id.
         args: Command to run in container.
     """
+    q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(make_runc_bundle_task, hosts, image, id)
-    if not _check_outcomes(res):
-        print('ERROR: Failed to make runC bundles!')
-        _print_outcomes(res)
-        return False
-
-    with fab.hide('running'):
-        res = fab.execute(make_runc_config_task, hosts, id, args)
-    if not _check_outcomes(res):
-        print('ERROR: Failed to make runC config in bundles!')
-        _print_outcomes(res)
-        return False
-
-    with fab.hide('running'):
-        res = fab.execute(runc_start_task, hosts, id)
+        res = fab.execute(runc_start_task, hosts, q, image, id, args)
     _print_outcomes(res)
+    if _check_outcomes(res):
+        durations = _get_durations(hosts, q)
+        _print_durations(durations)
 
 
 @ice.ParallelRunner
@@ -71,9 +65,13 @@ def runc_exec(hosts, id, *args):
         id: The runC container id.
         args: Command to run in container.
     """
+    q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(runc_exec_task, hosts, id, args)
+        res = fab.execute(runc_exec_task, hosts, q, id, args)
     _print_outcomes(res)
+    if _check_outcomes(res):
+        durations = _get_durations(hosts, q)
+        _print_durations(durations)
 
 
 @ice.ParallelRunner
@@ -176,27 +174,47 @@ def make_runc_config_task(hosts, id, args):
     return fab.sudo('{:s} > {:s}'.format(cmd, config_path), warn_only=True)
 
 
-def runc_start_task(hosts, id):
+def runc_start_task(hosts, q, image, id, args):
+    tm = experiment_timing.ExperimentTiming()
+    tm.start(time.time())
+
+    ret = make_runc_bundle_task(hosts, image, id)
+    if ret.failed:
+        return ret
+
+    ret = make_runc_config_task(hosts, id, args)
+    if ret.failed:
+        return ret
+
     bundle_path = path.join(BUNDLES_BASE_PATH, id)
-
-    if not fab_files.exists(bundle_path, use_sudo=True):
-        return _error('`{:s}` does not exist'.format(bundle_path))
-
     with fab.cd(bundle_path):
         fab.sudo('runc create {:s}'.format(id))
-        return fab.sudo('runc start {:s}'.format(id), warn_only=True)
+        ret = fab.sudo('runc start {:s}'.format(id), warn_only=True)
+
+    tm.end(time.time())
+    q.put([fab.env.host_string, tm.to_json()])
+
+    return ret
 
 
-def runc_exec_task(hosts, id, args):
+def runc_exec_task(hosts, q, id, args):
+    tm = experiment_timing.ExperimentTiming()
+    tm.start(time.time())
+
     bundle_path = path.join(BUNDLES_BASE_PATH, id)
 
     if not fab_files.exists(bundle_path, use_sudo=True):
         return _error('`{:s}` does not exist'.format(bundle_path))
 
     with fab.cd(bundle_path):
-        return fab.sudo('runc exec {:s} {:s}'.format(
+        ret = fab.sudo('runc exec {:s} {:s}'.format(
             id, ' '.join(args)
         ), warn_only=True)
+
+    tm.end(time.time())
+    q.put([fab.env.host_string, tm.to_json()])
+
+    return ret
 
 
 def runc_kill_task(hosts, id):
@@ -206,7 +224,8 @@ def runc_kill_task(hosts, id):
         return _error('`{:s}` does not exist'.format(bundle_path))
 
     with fab.cd(bundle_path):
-        fab.sudo('runc kill {:s}'.format(id))
+        # ignore error
+        fab.sudo('runc kill {:s}'.format(id), warn_only=True)
         return fab.sudo('runc delete {:s}'.format(id), warn_only=True)
 
 
@@ -251,3 +270,24 @@ def _print_outcomes(res):
         else:
             outcome = '[OK]'
         print("{:70s} {}".format(key, outcome))
+
+
+def _get_durations(hosts, queue):
+    durations = {}
+    for i in range(0, len(hosts)):
+        host, json_str = queue.get()
+        tm = experiment_timing.ExperimentTiming.from_json(json_str)
+        durations[host] = tm.duration()
+    return durations
+
+
+def _print_durations(durations):
+    table = ascii_table.ASCIITable()
+    table.add_column('host', ascii_table.ASCIITableColumn('Host', 60))
+    table.add_column('duration', ascii_table.ASCIITableColumn('Duration', 20))
+    for host, duration in durations.items():
+        table.add_row({
+            'host': host,
+            'duration': str(duration)
+        })
+    print(ascii_table.ASCIITableRenderer().render(table))

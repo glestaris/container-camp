@@ -1,8 +1,11 @@
 import re
 import json
+import time
+import multiprocessing
 from fabric import api as fab
 import ice
 from ice import ascii_table
+from ice import experiment_timing
 
 ###############################################################################
 # Runners
@@ -40,18 +43,24 @@ def check(hosts):
 def run(hosts, *args):
     """Run a container
     """
+    q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(container_run, hosts, *args)
+        res = fab.execute(container_run, hosts, q, *args)
     _print_outcomes(res)
+    durations = _get_durations(hosts, q)
+    _print_durations(durations)
 
 
 @ice.ParallelRunner
 def execute(hosts, *args):
     """Execute a process inside a container
     """
+    q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(container_exec, hosts, *args)
+        res = fab.execute(container_exec, hosts, q, *args)
     _print_outcomes(res)
+    durations = _get_durations(hosts, q)
+    _print_durations(durations)
 
 
 @ice.ParallelRunner
@@ -112,12 +121,28 @@ def daemon_check(hosts):
     return fab.sudo('service docker status > /dev/null', warn_only=True)
 
 
-def container_run(hosts, *args):
-    return fab.sudo('docker run ' + ' '.join(args), warn_only=True)
+def container_run(hosts, q, *args):
+    tm = experiment_timing.ExperimentTiming()
+    tm.start(time.time())
+
+    ret = fab.sudo('docker run ' + ' '.join(args), warn_only=True)
+
+    tm.end(time.time())
+    q.put([fab.env.host_string, tm.to_json()])
+
+    return ret
 
 
-def container_exec(hosts, *args):
-    return fab.sudo('docker exec ' + ' '.join(args), warn_only=True)
+def container_exec(hosts, q, *args):
+    tm = experiment_timing.ExperimentTiming()
+    tm.start(time.time())
+
+    ret = fab.sudo('docker exec ' + ' '.join(args), warn_only=True)
+
+    tm.end(time.time())
+    q.put([fab.env.host_string, tm.to_json()])
+
+    return ret
 
 
 def container_rm(hosts, *args):
@@ -146,3 +171,24 @@ def _print_outcomes(res):
         else:
             outcome = '[OK]'
         print('{:70s} {}'.format(key, outcome))
+
+
+def _get_durations(hosts, queue):
+    durations = {}
+    for i in range(0, len(hosts)):
+        host, json_str = queue.get()
+        tm = experiment_timing.ExperimentTiming.from_json(json_str)
+        durations[host] = tm.duration()
+    return durations
+
+
+def _print_durations(durations):
+    table = ascii_table.ASCIITable()
+    table.add_column('host', ascii_table.ASCIITableColumn('Host', 60))
+    table.add_column('duration', ascii_table.ASCIITableColumn('Duration', 20))
+    for host, duration in durations.items():
+        table.add_row({
+            'host': host,
+            'duration': str(duration)
+        })
+    print(ascii_table.ASCIITableRenderer().render(table))
