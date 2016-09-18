@@ -17,16 +17,16 @@ CVMFS_BASE_PATH = '/cvmfs/container-images.aws'
 
 
 @ice.ParallelRunner
-def ping_cvmfs(hosts):
+def ping_cvmfs(instances):
     """Ping CernVM-FS setup.
     """
     with fab.hide('running', 'warnings'):
-        res = fab.execute(ping_cvmfs_task, hosts)
+        res = fab.execute(ping_cvmfs_task, instances)
     _print_outcomes(res)
 
 
 @ice.ParallelRunner
-def mount_cvmfs(hosts, server_fqdn, cert_path):
+def mount_cvmfs(instances, server_fqdn, cert_path):
     """Mount CernVM-FS repository.
 
     Args:
@@ -34,13 +34,13 @@ def mount_cvmfs(hosts, server_fqdn, cert_path):
         cert_path: Path to the public ceritifcate file.
     """
     with fab.hide('running'):
-        fab.execute(write_cvmfs_config_task, hosts, server_fqdn, cert_path)
-        res = fab.execute(mount_cvmfs_task, hosts)
+        fab.execute(write_cvmfs_config_task, instances, server_fqdn, cert_path)
+        res = fab.execute(mount_cvmfs_task, instances)
     _print_outcomes(res)
 
 
 @ice.ParallelRunner
-def runc_run(hosts, image, id, *args):
+def runc_run(instances, image, id, *args):
     """Start a container using a CernVM-FS backed container image.
 
     Args:
@@ -50,15 +50,15 @@ def runc_run(hosts, image, id, *args):
     """
     q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(runc_run_task, hosts, q, image, id, args)
+        res = fab.execute(runc_run_task, instances, q, image, id, args)
     _print_outcomes(res)
     if _check_outcomes(res):
-        durations = _get_durations(hosts, q)
+        durations = _get_durations(instances, q)
         _print_durations(durations)
 
 
 @ice.ParallelRunner
-def runc_exec(hosts, id, *args):
+def runc_exec(instances, id, *args):
     """Execute a process inside an existing container.
 
     Args:
@@ -67,29 +67,29 @@ def runc_exec(hosts, id, *args):
     """
     q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(runc_exec_task, hosts, q, id, args)
+        res = fab.execute(runc_exec_task, instances, q, id, args)
     _print_outcomes(res)
     if _check_outcomes(res):
-        durations = _get_durations(hosts, q)
+        durations = _get_durations(instances, q)
         _print_durations(durations)
 
 
 @ice.ParallelRunner
-def runc_delete(hosts, id):
+def runc_delete(instances, id):
     """Delete a running container.
 
     Args:
         id: The runC container id.
     """
     with fab.hide('running'):
-        res = fab.execute(runc_kill_task, hosts, id)
+        res = fab.execute(runc_kill_task, instances, id)
     if not _check_outcomes(res):
         print('ERROR: Failed to kill runC containers!')
         _print_outcomes(res)
         return False
 
     with fab.hide('running'):
-        res = fab.execute(delete_runc_bundle_task, hosts, id)
+        res = fab.execute(delete_runc_bundle_task, instances, id)
     _print_outcomes(res)
 
 ###############################################################################
@@ -97,11 +97,11 @@ def runc_delete(hosts, id):
 ###############################################################################
 
 
-def ping_cvmfs_task(hosts):
+def ping_cvmfs_task(instances):
     return fab.run('[ -f /cvmfs/container-images.aws/ping ]', warn_only=True)
 
 
-def write_cvmfs_config_task(hosts, server_fqdn, cert_path):
+def write_cvmfs_config_task(instances, server_fqdn, cert_path):
     fab.put(
         cert_path, '/etc/cvmfs/keys/container-images.aws.pub',
         use_sudo=True
@@ -129,7 +129,7 @@ CVMFS_CLAIM_OWNERSHIP=no
     )
 
 
-def mount_cvmfs_task(hosts):
+def mount_cvmfs_task(instances):
     fab.sudo('mkdir -p /cvmfs/container-images.aws')
     return fab.sudo(
         'mount -t cvmfs container-images.aws /cvmfs/container-images.aws',
@@ -137,7 +137,7 @@ def mount_cvmfs_task(hosts):
     )
 
 
-def make_runc_bundle_task(hosts, image, id):
+def make_runc_bundle_task(instances, image, id):
     bundle_path = path.join(BUNDLES_BASE_PATH, id)
     image_path = path.join(CVMFS_BASE_PATH, 'image', image)
     rw_branch_path = path.join(bundle_path, 'rw')
@@ -160,7 +160,7 @@ def make_runc_bundle_task(hosts, image, id):
     )
 
 
-def make_runc_config_task(hosts, id, args):
+def make_runc_config_task(instances, id, args):
     bundle_path = path.join(BUNDLES_BASE_PATH, id)
     config_path = path.join(bundle_path, "config.json")
 
@@ -174,14 +174,14 @@ def make_runc_config_task(hosts, id, args):
     return fab.sudo('{:s} > {:s}'.format(cmd, config_path), warn_only=True)
 
 
-def runc_run_task(hosts, q, image, id, args):
+def runc_run_task(instances, q, image, id, args):
     tm = experiment_timing.ExperimentTiming()
 
-    ret = make_runc_bundle_task(hosts, image, id)
+    ret = make_runc_bundle_task(instances, image, id)
     if ret.failed:
         return ret
 
-    ret = make_runc_config_task(hosts, id, args)
+    ret = make_runc_config_task(instances, id, args)
     if ret.failed:
         return ret
 
@@ -196,7 +196,7 @@ def runc_run_task(hosts, q, image, id, args):
     return ret
 
 
-def runc_exec_task(hosts, q, id, args):
+def runc_exec_task(instances, q, id, args):
     tm = experiment_timing.ExperimentTiming()
     tm.start(time.time())
 
@@ -216,7 +216,7 @@ def runc_exec_task(hosts, q, id, args):
     return ret
 
 
-def runc_kill_task(hosts, id):
+def runc_kill_task(instances, id):
     bundle_path = path.join(BUNDLES_BASE_PATH, id)
 
     if not fab_files.exists(bundle_path, use_sudo=True):
@@ -228,7 +228,7 @@ def runc_kill_task(hosts, id):
         return fab.sudo('runc delete {:s}'.format(id), warn_only=True)
 
 
-def delete_runc_bundle_task(hosts, id):
+def delete_runc_bundle_task(instances, id):
     bundle_path = path.join(BUNDLES_BASE_PATH, id)
     rootfs_path = path.join(bundle_path, 'rootfs')
 
@@ -271,22 +271,22 @@ def _print_outcomes(res):
         print("{:70s} {}".format(key, outcome))
 
 
-def _get_durations(hosts, queue):
+def _get_durations(instances, queue):
     durations = {}
-    for i in range(0, len(hosts)):
-        host, json_str = queue.get()
+    for i in range(0, len(instances)):
+        host_string, json_str = queue.get()
         tm = experiment_timing.ExperimentTiming.from_json(json_str)
-        durations[host] = tm.duration()
+        durations[host_string] = tm.duration()
     return durations
 
 
 def _print_durations(durations):
     table = ascii_table.ASCIITable()
-    table.add_column('host', ascii_table.ASCIITableColumn('Host', 60))
+    table.add_column('host_string', ascii_table.ASCIITableColumn('Host', 60))
     table.add_column('duration', ascii_table.ASCIITableColumn('Duration', 20))
-    for host, duration in durations.items():
+    for host_string, duration in durations.items():
         table.add_row({
-            'host': host,
+            'host_string': host_string,
             'duration': str(duration)
         })
     print(ascii_table.ASCIITableRenderer().render(table))

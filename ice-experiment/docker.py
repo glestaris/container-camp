@@ -13,71 +13,71 @@ from ice import experiment_timing
 
 
 @ice.ParallelRunner
-def start(hosts):
+def start(instances):
     """Start Docker daemon
     """
     with fab.hide('running'):
-        res = fab.execute(daemon_start, hosts)
+        res = fab.execute(daemon_start, instances)
     _print_outcomes(res)
 
 
 @ice.ParallelRunner
-def stop(hosts):
+def stop(instances):
     """Stop Docker daemon
     """
     with fab.hide('running'):
-        res = fab.execute(daemon_stop, hosts)
+        res = fab.execute(daemon_stop, instances)
     _print_outcomes(res)
 
 
 @ice.ParallelRunner
-def check(hosts):
+def check(instances):
     """Check the Docker daemon status
     """
     with fab.hide('running'):
-        res = fab.execute(daemon_check, hosts)
+        res = fab.execute(daemon_check, instances)
     _print_outcomes(res)
 
 
 @ice.ParallelRunner
-def run(hosts, *args):
+def run(instances, *args):
     """Run a container
     """
     q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(container_run, hosts, q, *args)
+        res = fab.execute(container_run, instances, q, *args)
     _print_outcomes(res)
-    durations = _get_durations(hosts, q)
+    durations = _get_durations(instances, q)
     _print_durations(durations)
 
 
 @ice.ParallelRunner
-def execute(hosts, *args):
+def execute(instances, *args):
     """Execute a process inside a container
     """
     q = multiprocessing.Queue()
     with fab.hide('running'):
-        res = fab.execute(container_exec, hosts, q, *args)
+        res = fab.execute(container_exec, instances, q, *args)
     _print_outcomes(res)
-    durations = _get_durations(hosts, q)
+    durations = _get_durations(instances, q)
     _print_durations(durations)
 
 
 @ice.ParallelRunner
-def rm(hosts, *args):
+def rm(instances, *args):
     """Remove a container
     """
     with fab.hide('running'):
-        res = fab.execute(container_rm, hosts, *args)
+        res = fab.execute(container_rm, instances, *args)
     _print_outcomes(res)
 
 
 @ice.ParallelRunner
-def ps(hosts, *args):
+def ps(instances, *args):
     """List running containers
     """
     with fab.hide('running', 'stdout'):
-        res = fab.execute(daemon_ps, hosts)
+        res = fab.execute(daemon_ps, instances)
 
     res_parsed = {}
     for key, value in res.items():
@@ -109,19 +109,19 @@ def ps(hosts, *args):
 # Tasks
 ###############################################################################
 
-def daemon_start(hosts):
+def daemon_start(instances):
     return fab.sudo('service docker start', warn_only=True)
 
 
-def daemon_stop(hosts):
+def daemon_stop(instances):
     return fab.sudo('service docker stop', warn_only=True)
 
 
-def daemon_check(hosts):
+def daemon_check(instances):
     return fab.sudo('service docker status > /dev/null', warn_only=True)
 
 
-def container_run(hosts, q, *args):
+def container_run(instances, q, *args):
     tm = experiment_timing.ExperimentTiming()
     tm.start(time.time())
 
@@ -133,7 +133,7 @@ def container_run(hosts, q, *args):
     return ret
 
 
-def container_exec(hosts, q, *args):
+def container_exec(instances, q, *args):
     tm = experiment_timing.ExperimentTiming()
     tm.start(time.time())
 
@@ -145,11 +145,11 @@ def container_exec(hosts, q, *args):
     return ret
 
 
-def container_rm(hosts, *args):
+def container_rm(instances, *args):
     return fab.sudo('docker rm ' + ' '.join(args), warn_only=True)
 
 
-def daemon_ps(hosts):
+def daemon_ps(instances):
     cmd = """docker ps --format '{
     "name": "{{.Names}}",
     "image": "{{.Image}}",
@@ -173,22 +173,22 @@ def _print_outcomes(res):
         print('{:70s} {}'.format(key, outcome))
 
 
-def _get_durations(hosts, queue):
+def _get_durations(instances, queue):
     durations = {}
-    for i in range(0, len(hosts)):
-        host, json_str = queue.get()
+    for i in range(0, len(instances)):
+        host_string, json_str = queue.get()
         tm = experiment_timing.ExperimentTiming.from_json(json_str)
-        durations[host] = tm.duration()
+        durations[host_string] = tm.duration()
     return durations
 
 
 def _print_durations(durations):
     table = ascii_table.ASCIITable()
-    table.add_column('host', ascii_table.ASCIITableColumn('Host', 60))
+    table.add_column('host_string', ascii_table.ASCIITableColumn('Host', 60))
     table.add_column('duration', ascii_table.ASCIITableColumn('Duration', 20))
-    for host, duration in durations.items():
+    for host_string, duration in durations.items():
         table.add_row({
-            'host': host,
+            'host_string': host_string,
             'duration': str(duration)
         })
     print(ascii_table.ASCIITableRenderer().render(table))
